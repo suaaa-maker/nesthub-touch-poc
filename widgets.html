@@ -4,16 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="color-scheme" content="dark">
-  <title>Hub Clock</title>
+  <title>Hub Clock v4</title>
   <style>
     :root {
       color-scheme: dark;
       font-family: Arial, "Noto Sans TC", sans-serif;
-      background: #000;
+      background: #0c0a19;
       color: #f7f8fa;
-      --muted: #a6a8ae;
-      --line: rgba(255, 255, 255, .16);
-      --weather: #dff2ff;
+      --surface: #0c0a19;
+      --clock-glow: #251938;
+      --weather-glow: #151537;
+      --clock-accent: #e1ccff;
+      --weather: #c0caff;
+      --muted: #bcb4d2;
+      --line: rgba(217, 204, 255, .22);
+    }
+
+    body[data-period="dawn"] {
+      --surface: #21121c;
+      --clock-glow: #57312c;
+      --weather-glow: #3c2235;
+      --clock-accent: #ffe0b7;
+      --weather: #ffc5d3;
+      --muted: #e3c0c5;
+      --line: rgba(255, 206, 199, .25);
+    }
+
+    body[data-period="day"] {
+      --surface: #0b2130;
+      --clock-glow: #174755;
+      --weather-glow: #102c4c;
+      --clock-accent: #c7fff2;
+      --weather: #a6daff;
+      --muted: #b1cedb;
+      --line: rgba(195, 235, 255, .25);
+    }
+
+    body[data-period="dusk"] {
+      --surface: #221326;
+      --clock-glow: #513244;
+      --weather-glow: #312040;
+      --clock-accent: #ffdbbf;
+      --weather: #f6bce4;
+      --muted: #dbc0db;
+      --line: rgba(255, 211, 231, .25);
     }
 
     * { box-sizing: border-box; }
@@ -25,7 +59,6 @@
       min-width: 640px;
       min-height: 360px;
       overflow: hidden;
-      background: #000;
       user-select: none;
       -webkit-user-select: none;
       -webkit-tap-highlight-color: transparent;
@@ -35,36 +68,37 @@
       width: 100%;
       height: 100%;
       padding: max(30px, env(safe-area-inset-top)) max(36px, env(safe-area-inset-right))
-        max(28px, env(safe-area-inset-bottom)) max(40px, env(safe-area-inset-left));
+        max(30px, env(safe-area-inset-bottom)) max(36px, env(safe-area-inset-left));
       display: grid;
       grid-template-columns: minmax(0, 1.18fr) minmax(360px, .82fr);
-      background: #000;
+      background:
+        radial-gradient(ellipse at 22% 17%, var(--clock-glow), transparent 62%),
+        radial-gradient(ellipse at 92% 83%, var(--weather-glow), transparent 58%),
+        var(--surface);
     }
 
     .clock-panel, .weather-panel {
       min-width: 0;
       min-height: 0;
-      touch-action: manipulation;
-      cursor: default;
     }
 
     .clock-panel {
       padding: 4px 12px;
       display: grid;
-      grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+      place-items: center;
       border-right: 1px solid var(--line);
     }
-
-    .clock-panel .day { align-self: start; }
 
     .weather-panel {
       padding: 4px 0 2px 36px;
       display: grid;
       grid-template-rows: auto 1fr auto;
+      touch-action: manipulation;
+      cursor: pointer;
     }
 
     .day, .city {
-      color: #d8d9dd;
+      color: var(--muted);
       font-size: 26px;
       font-weight: 720;
       letter-spacing: .1em;
@@ -74,47 +108,44 @@
       text-overflow: ellipsis;
     }
 
+    .clock-stack {
+      width: 100%;
+      text-align: center;
+    }
+
     .time-wrap {
-      position: relative;
-      justify-self: center;
+      margin-top: 20px;
+      display: grid;
+      justify-items: center;
+      gap: 14px;
     }
 
     #clock {
+      color: var(--clock-accent);
       font: 760 clamp(118px, 20vw, 204px)/.9 Arial, sans-serif;
-      letter-spacing: -.075em;
+      letter-spacing: -.04em;
+      padding-inline-end: .04em;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
 
     #seconds {
-      position: absolute;
-      top: calc(100% + 10px);
-      left: 50%;
       color: var(--muted);
       font: 620 31px/1 Arial, sans-serif;
       font-variant-numeric: tabular-nums;
-      visibility: hidden;
-      transform: translateX(-50%);
-    }
-
-    body.show-seconds #seconds { visibility: visible; }
-
-    .date-row {
-      align-self: end;
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
-      gap: 18px;
+      min-width: 2.15em;
+      padding: .22em .35em;
+      border: 1px solid var(--line);
+      border-radius: 999px;
     }
 
     #date {
-      color: #c9cbd0;
+      margin-top: 24px;
+      color: var(--muted);
       font-size: 27px;
       font-weight: 560;
       white-space: nowrap;
     }
-
-    .hint { color: #4d5056; font-size: 11px; letter-spacing: .04em; white-space: nowrap; }
 
     .current-weather {
       min-height: 0;
@@ -194,20 +225,23 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #94979d;
+      color: var(--muted);
       font-size: 12px;
       letter-spacing: .02em;
     }
 
-    #status[data-state="error"] { color: #d49191; }
-    .clock-panel:active, .weather-panel:active { background: rgba(255, 255, 255, .018); }
+    #status[data-state="error"] { color: #ffb2b2; }
+    .weather-panel:active { background: rgba(255, 255, 255, .035); }
+    .weather-panel:focus-visible { outline: 2px solid var(--weather); outline-offset: 5px; }
 
     @media (max-width: 800px), (max-height: 460px) {
       .screen { padding: 18px 22px; grid-template-columns: minmax(0, 1.12fr) minmax(285px, .88fr); }
       .weather-panel { padding-left: 22px; }
       .day, .city { font-size: 19px; }
       #clock { font-size: clamp(82px, 16vw, 124px); }
-      #seconds { top: calc(100% + 6px); font-size: 23px; }
+      .time-wrap { margin-top: 14px; gap: 10px; }
+      #seconds { font-size: 23px; }
+      #date { margin-top: 16px; }
       #date, #condition { font-size: 20px; }
       .temperature-row { grid-template-columns: 1fr 98px; }
       .weather-icon { width: 94px; height: 82px; }
@@ -224,10 +258,12 @@
 </head>
 <body>
   <main class="screen">
-    <section class="clock-panel" id="clock-panel" role="button" tabindex="0" aria-label="時間；輕觸切換秒數">
-      <div class="day" id="day">星期日</div>
-      <div class="time-wrap"><div id="clock">--:--</div><div id="seconds" aria-hidden="true">--</div></div>
-      <div class="date-row"><div id="date">---- 年 -- 月 -- 日</div><div class="hint">輕觸切換秒數</div></div>
+    <section class="clock-panel" id="clock-panel" aria-label="時間">
+      <div class="clock-stack">
+        <div class="day" id="day">星期日</div>
+        <div class="time-wrap"><div id="clock">--:--</div><div id="seconds" aria-hidden="true">--</div></div>
+        <div id="date">---- 年 -- 月 -- 日</div>
+      </div>
     </section>
 
     <section class="weather-panel" id="weather-panel" role="button" tabindex="0" aria-label="天氣；輕觸立即更新">
@@ -240,7 +276,7 @@
               <circle cx="64" cy="54" r="20"></circle>
               <path d="M64 18v-9M64 99v-9M28 54h-9M109 54h-9M38 28l-7-7M97 87l-7-7M90 28l7-7M31 87l7-7"></path>
             </g>
-            <g class="cloud" fill="#000" stroke="currentColor" stroke-width="5" stroke-linejoin="round">
+            <g class="cloud" fill="var(--surface)" stroke="currentColor" stroke-width="5" stroke-linejoin="round">
               <path d="M32 83c-11 0-20-8-20-19s9-19 21-19c5-17 18-27 35-27 22 0 38 17 39 39 12 0 21 9 21 21 0 11-9 20-21 20H33c-12 0-21-6-21-15"></path>
             </g>
             <g class="fog" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M30 106h75M43 116h70"></path></g>
@@ -266,6 +302,7 @@
       'use strict';
 
       const CUSTOM_NAMESPACE = 'urn:x-cast:com.example.nesthub.touchpoc';
+      const WIDGET_VERSION = 4;
       const WEATHER_REFRESH_MS = 15 * 60 * 1000;
       const WEATHER_TIMEOUT_MS = 12 * 1000;
       const params = new URLSearchParams(location.search);
@@ -275,7 +312,7 @@
         longitude: Number(params.get('lon') || 121.5654),
         timezone: params.get('tz') || 'Asia/Taipei'
       };
-      const state = { showSeconds: false, sequence: 0, weatherPending: false, lastWeatherUpdate: null };
+      const state = { sequence: 0, weatherPending: false, lastWeatherUpdate: null };
       const clockFormatter = new Intl.DateTimeFormat('zh-TW', {
         timeZone: config.timezone,
         weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric',
@@ -299,8 +336,17 @@
       const statusNode = document.getElementById('status');
       cityNode.textContent = config.city;
 
+      function periodForHour(hour) {
+        if (hour < 5 || hour >= 20) return 'night';
+        if (hour < 9) return 'dawn';
+        if (hour < 17) return 'day';
+        return 'dusk';
+      }
+
       function updateClock() {
         const parts = Object.fromEntries(clockFormatter.formatToParts(new Date()).map(part => [part.type, part.value]));
+        const period = periodForHour(Number(parts.hour));
+        if (document.body.dataset.period !== period) document.body.dataset.period = period;
         dayNode.textContent = parts.weekday;
         clockNode.textContent = `${parts.hour}:${parts.minute}`;
         secondsNode.textContent = parts.second;
@@ -399,21 +445,13 @@
         }
       }
 
-      function toggleSeconds(event) {
-        state.showSeconds = !state.showSeconds;
-        document.body.classList.toggle('show-seconds', state.showSeconds);
-        reportAction('clock', 'toggle-seconds', state.showSeconds, event);
-      }
-
-      const clockPanel = document.getElementById('clock-panel');
       const weatherPanel = document.getElementById('weather-panel');
-      clockPanel.addEventListener('click', toggleSeconds);
       weatherPanel.addEventListener('click', event => loadWeather(event));
-      [clockPanel, weatherPanel].forEach(panel => panel.addEventListener('keydown', event => {
+      weatherPanel.addEventListener('keydown', event => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        panel.click();
-      }));
+        loadWeather(event);
+      });
 
       ['pointerdown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, event => {
         const panel = event.target.closest ? event.target.closest('.clock-panel, .weather-panel') : null;
@@ -449,14 +487,14 @@
         receiverContext.addEventListener(cast.framework.system.EventType.READY, () => {
           disableCafMediaTouchOverlay();
           broadcast({
-            kind: 'widget-ready', widget: 'hub-clock-weather',
+            kind: 'widget-ready', widget: 'hub-clock-weather', version: WIDGET_VERSION,
             viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
             location: { city: config.city, latitude: config.latitude, longitude: config.longitude, timezone: config.timezone },
             maxTouchPoints: navigator.maxTouchPoints || 0, timestamp: new Date().toISOString()
           });
         });
         receiverContext.start({
-          disableIdleTimeout: true, skipPlayersLoad: true, statusText: 'Hub Clock ready', versionCode: 3,
+          disableIdleTimeout: true, skipPlayersLoad: true, statusText: 'Hub Clock v4 ready', versionCode: WIDGET_VERSION,
           uiConfig: { touchScreenOptimizedApp: true },
           customNamespaces: { [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON }
         });
