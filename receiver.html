@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>Nest Hub Touch POC</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      background: #0b1220;
+      color: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 18px;
+      background: radial-gradient(circle at top, #19345b 0%, #0b1220 55%);
+      overflow: hidden;
+    }
+
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); }
+
+    .subline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      color: #bfdbfe;
+      font-size: clamp(15px, 2vw, 21px);
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .test-button {
+      min-height: 150px;
+      border: 3px solid rgba(255,255,255,.42);
+      border-radius: 24px;
+      color: white;
+      font-size: clamp(34px, 5.8vw, 64px);
+      font-weight: 800;
+      letter-spacing: .04em;
+      box-shadow: 0 14px 30px rgba(0,0,0,.25);
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #button-a { background: #2563eb; }
+    #button-b { background: #db2777; }
+    .test-button:active, .test-button.pressed { transform: scale(.975); filter: brightness(1.18); }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .card {
+      min-width: 0;
+      padding: 16px 18px;
+      border: 1px solid rgba(148,163,184,.38);
+      border-radius: 16px;
+      background: rgba(15,23,42,.78);
+    }
+
+    .card h2 { margin: 0 0 8px; font-size: clamp(18px, 2.5vw, 27px); }
+    #last-action { color: #86efac; }
+    #capabilities { color: #cbd5e1; font-size: clamp(14px, 1.75vw, 19px); overflow-wrap: anywhere; }
+
+    .counters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .counter {
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #1e293b;
+      font: 600 clamp(13px, 1.65vw, 18px)/1.2 ui-monospace, Consolas, monospace;
+    }
+
+    .log-card { min-height: 0; overflow: hidden; }
+    #event-log {
+      height: calc(100% - 38px);
+      margin: 0;
+      overflow: hidden;
+      white-space: pre-wrap;
+      font: clamp(13px, 1.65vw, 18px)/1.45 ui-monospace, Consolas, monospace;
+      color: #e2e8f0;
+    }
+
+    .error { color: #fca5a5 !important; }
+
+    @media (max-width: 720px) {
+      body { padding: 14px; gap: 12px; }
+      .buttons { gap: 12px; }
+      .test-button { min-height: 112px; }
+      .summary { grid-template-columns: 1fr; gap: 10px; }
+    }
+  </style>
+  <script>
+    window.receiverSdkLoadFailed = false;
+  </script>
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"
+          onerror="window.receiverSdkLoadFailed = true"></script>
+</head>
+<body>
+  <header>
+    <h1>Nest Hub Gen 2 Touch POC</h1>
+    <div class="subline">
+      <span id="sdk-state">CAF：載入中</span>
+      <span id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <main class="buttons" aria-label="觸控測試按鈕">
+    <button class="test-button" id="button-a" type="button">BUTTON A</button>
+    <button class="test-button" id="button-b" type="button">BUTTON B</button>
+  </main>
+
+  <section class="summary">
+    <div class="card">
+      <h2>最近動作</h2>
+      <div id="last-action" aria-live="polite">等待觸控…</div>
+      <div class="counters">
+        <span class="counter">pointerdown: <b id="count-pointerdown">0</b></span>
+        <span class="counter">touchstart: <b id="count-touchstart">0</b></span>
+        <span class="counter">click: <b id="count-click">0</b></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Receiver 能力</h2>
+      <div id="capabilities">等待 CAF ready…</div>
+    </div>
+  </section>
+
+  <section class="card log-card">
+    <h2>事件紀錄（新到舊）</h2>
+    <pre id="event-log">尚無事件</pre>
+  </section>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const CUSTOM_NAMESPACE = 'urn:x-cast:com.example.nesthub.touchpoc';
+      const eventTypes = ['pointerdown', 'touchstart', 'click'];
+      const counts = Object.fromEntries(eventTypes.map(type => [type, 0]));
+      const history = [];
+      const sdkState = document.getElementById('sdk-state');
+      const capabilitiesNode = document.getElementById('capabilities');
+      const lastAction = document.getElementById('last-action');
+      const eventLog = document.getElementById('event-log');
+      let receiverContext = null;
+      let sequence = 0;
+
+      const timeText = date => date.toLocaleTimeString('zh-TW', { hour12: false });
+      const clock = document.getElementById('clock');
+      const updateClock = () => { clock.textContent = timeText(new Date()); };
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      function coordinates(event) {
+        const point = event.touches && event.touches[0] ? event.touches[0] : event;
+        const x = Number.isFinite(point.clientX) ? Math.round(point.clientX) : null;
+        const y = Number.isFinite(point.clientY) ? Math.round(point.clientY) : null;
+        return { x, y };
+      }
+
+      function broadcast(payload) {
+        if (!receiverContext || !receiverContext.isSystemReady()) return;
+        try {
+          receiverContext.sendCustomMessage(CUSTOM_NAMESPACE, undefined, payload);
+        } catch (error) {
+          console.warn('Unable to broadcast touch event', error);
+        }
+      }
+
+      function recordEvent(event) {
+        const target = event.target.closest ? event.target.closest('button') : null;
+        const targetName = target ? target.id : (event.target.id || event.target.tagName || 'unknown');
+        const now = new Date();
+        const point = coordinates(event);
+        const entry = {
+          kind: 'input-event',
+          sequence: ++sequence,
+          eventType: event.type,
+          target: targetName,
+          pointerType: event.pointerType || null,
+          touchCount: event.touches ? event.touches.length : null,
+          x: point.x,
+          y: point.y,
+          isTrusted: event.isTrusted,
+          timestamp: now.toISOString(),
+          localTime: timeText(now)
+        };
+
+        counts[event.type] += 1;
+        document.getElementById(`count-${event.type}`).textContent = counts[event.type];
+        const details = [entry.eventType, entry.target, entry.pointerType, `(${entry.x}, ${entry.y})`, entry.localTime]
+          .filter(value => value !== null && value !== '').join(' · ');
+        history.unshift(`#${entry.sequence} ${details}`);
+        history.splice(12);
+        eventLog.textContent = history.join('\n');
+        lastAction.textContent = details;
+
+        if (target) {
+          target.classList.add('pressed');
+          setTimeout(() => target.classList.remove('pressed'), 150);
+        }
+
+        broadcast(entry);
+        console.log('[touch-poc]', entry);
+      }
+
+      eventTypes.forEach(type => {
+        document.addEventListener(type, recordEvent, { capture: true, passive: true });
+      });
+
+      function showDeviceCapabilities() {
+        const capabilities = receiverContext.getDeviceCapabilities() || {};
+        const information = receiverContext.getDeviceInformation() || {};
+        const touchKey = cast.framework.system.DeviceCapabilities.TOUCH_INPUT_SUPPORTED;
+        const modelKey = cast.framework.system.DeviceInformation.MODEL_NAME;
+        const osNameKey = cast.framework.system.DeviceInformation.OS_NAME;
+        const osVersionKey = cast.framework.system.DeviceInformation.OS_VERSION;
+        const touchValue = Object.prototype.hasOwnProperty.call(capabilities, touchKey)
+          ? String(capabilities[touchKey])
+          : '未回報';
+
+        capabilitiesNode.textContent = [
+          `touch_input_supported=${touchValue}`,
+          `model=${information[modelKey] || 'unknown'}`,
+          `os=${information[osNameKey] || 'unknown'} ${information[osVersionKey] || ''}`.trim(),
+          `maxTouchPoints=${navigator.maxTouchPoints || 0}`
+        ].join(' ｜ ');
+
+        broadcast({
+          kind: 'receiver-ready',
+          capabilities,
+          information,
+          maxTouchPoints: navigator.maxTouchPoints || 0,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      try {
+        if (window.receiverSdkLoadFailed || !window.cast || !cast.framework) {
+          throw new Error('Google Cast Web Receiver SDK 載入失敗');
+        }
+
+        receiverContext = cast.framework.CastReceiverContext.getInstance();
+        receiverContext.addEventListener(cast.framework.system.EventType.READY, () => {
+          sdkState.textContent = `CAF ${cast.framework.VERSION || ''}：READY`;
+          showDeviceCapabilities();
+        });
+        receiverContext.addEventListener(cast.framework.system.EventType.ERROR, event => {
+          sdkState.textContent = `CAF 錯誤：${event.data || 'unknown'}`;
+          sdkState.classList.add('error');
+        });
+        receiverContext.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, () => {
+          setTimeout(showDeviceCapabilities, 0);
+        });
+
+        receiverContext.start({
+          disableIdleTimeout: true,
+          skipPlayersLoad: true,
+          statusText: 'Nest Hub touch test ready',
+          versionCode: 2,
+          uiConfig: {
+            touchScreenOptimizedApp: true
+          },
+          customNamespaces: {
+            [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON
+          }
+        });
+      } catch (error) {
+        sdkState.textContent = `CAF 初始化失敗：${error.message}`;
+        sdkState.classList.add('error');
+        capabilitiesNode.textContent = 'Receiver SDK 未成功啟動；請檢查網路與遠端除錯 Console。';
+        capabilitiesNode.classList.add('error');
+        console.error(error);
+      }
+    })();
+  </script>
+</body>
+</html>

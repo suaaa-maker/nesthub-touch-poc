@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Nest Hub Touch POC Sender</title>
+  <style>
+    :root { font-family: Arial, "Noto Sans TC", sans-serif; color-scheme: light dark; }
+    body { max-width: 920px; margin: 0 auto; padding: 28px; line-height: 1.5; }
+    h1 { margin-top: 0; }
+    .panel { padding: 18px; margin: 16px 0; border: 1px solid #64748b; border-radius: 12px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    input { flex: 1 1 260px; min-width: 0; padding: 11px; font: inherit; }
+    button { padding: 11px 16px; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    google-cast-launcher { width: 48px; height: 48px; --connected-color: #22c55e; --disconnected-color: #2563eb; }
+    #status { font-weight: 700; }
+    #receiver-events { min-height: 180px; max-height: 360px; overflow: auto; white-space: pre-wrap; }
+    .hint { color: #64748b; }
+    .error { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <h1>Nest Hub Touch POC Sender</h1>
+  <p>此頁只負責啟動已註冊的 Custom Web Receiver，並接收 Receiver 回傳的觸控事件紀錄。</p>
+
+  <section class="panel">
+    <h2>1. 設定 Receiver App ID</h2>
+    <div class="row">
+      <input id="app-id" inputmode="text" autocomplete="off" spellcheck="false" placeholder="例如：1A2B3C4D" aria-label="Receiver App ID">
+      <button id="apply-app-id" type="button">套用並重新載入</button>
+    </div>
+    <p class="hint">App ID 會寫入網址參數及此瀏覽器的 localStorage；它不是密碼。</p>
+  </section>
+
+  <section class="panel">
+    <h2>2. 啟動 Cast</h2>
+    <div class="row">
+      <google-cast-launcher id="cast-launcher" aria-label="Google Cast"></google-cast-launcher>
+      <button id="request-session" type="button" disabled>選擇 Cast 裝置</button>
+      <button id="end-session" type="button" disabled>停止投放</button>
+    </div>
+    <p id="status" aria-live="polite">等待 Google Cast Sender SDK…</p>
+    <p id="cast-state" class="hint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>3. Receiver 事件</h2>
+    <pre id="receiver-events">尚未收到 Receiver 訊息。</pre>
+  </section>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const CUSTOM_NAMESPACE = 'urn:x-cast:com.example.nesthub.touchpoc';
+      const input = document.getElementById('app-id');
+      const applyButton = document.getElementById('apply-app-id');
+      const requestButton = document.getElementById('request-session');
+      const endButton = document.getElementById('end-session');
+      const statusNode = document.getElementById('status');
+      const castStateNode = document.getElementById('cast-state');
+      const eventsNode = document.getElementById('receiver-events');
+      const lines = [];
+      let castContext = null;
+      let attachedSession = null;
+
+      const params = new URLSearchParams(location.search);
+      input.value = (params.get('appId') || localStorage.getItem('nesthubTouchPocAppId') || '').trim();
+
+      function setStatus(message, isError = false) {
+        statusNode.textContent = message;
+        statusNode.classList.toggle('error', isError);
+      }
+
+      function formatError(error) {
+        if (!error) return '未知錯誤';
+        if (typeof error === 'string') return error;
+        return [error.code, error.description, error.message].filter(Boolean).join(' — ') || String(error);
+      }
+
+      function appendReceiverMessage(message) {
+        let data = message;
+        try { data = typeof message === 'string' ? JSON.parse(message) : message; } catch (_) {}
+        const stamp = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+        const text = data && data.kind === 'input-event'
+          ? `${stamp}  #${data.sequence} ${data.eventType} / ${data.target} / ${data.pointerType || '-'} / (${data.x}, ${data.y}) / trusted=${data.isTrusted}`
+          : `${stamp}  ${typeof data === 'string' ? data : JSON.stringify(data)}`;
+        lines.unshift(text);
+        lines.splice(100);
+        eventsNode.textContent = lines.join('\n');
+      }
+
+      function messageListener(namespace, message) {
+        if (namespace === CUSTOM_NAMESPACE) appendReceiverMessage(message);
+      }
+
+      function attachToCurrentSession() {
+        const session = castContext.getCurrentSession();
+        if (!session || session === attachedSession) return;
+        if (attachedSession) {
+          try { attachedSession.removeMessageListener(CUSTOM_NAMESPACE, messageListener); } catch (_) {}
+        }
+        attachedSession = session;
+        session.addMessageListener(CUSTOM_NAMESPACE, messageListener);
+        const device = session.getCastDevice();
+        setStatus(`已連線：${device ? device.friendlyName : 'Cast 裝置'}`);
+        endButton.disabled = false;
+      }
+
+      applyButton.addEventListener('click', () => {
+        const appId = input.value.trim();
+        if (!appId) {
+          setStatus('請先輸入 Google Cast Developer Console 的 Receiver App ID。', true);
+          return;
+        }
+        localStorage.setItem('nesthubTouchPocAppId', appId);
+        const url = new URL(location.href);
+        url.searchParams.set('appId', appId);
+        location.replace(url.toString());
+      });
+
+      requestButton.addEventListener('click', async () => {
+        try {
+          await castContext.requestSession();
+          attachToCurrentSession();
+        } catch (error) {
+          const code = formatError(error);
+          setStatus(code === 'cancel' ? '已取消選擇裝置。' : `啟動 Cast 失敗：${code}`, code !== 'cancel');
+        }
+      });
+
+      endButton.addEventListener('click', () => {
+        castContext.endCurrentSession(true);
+      });
+
+      window.__onGCastApiAvailable = function(isAvailable, errorInfo) {
+        if (!isAvailable) {
+          setStatus(`Cast API 無法使用：${formatError(errorInfo)}`, true);
+          return;
+        }
+
+        const appId = input.value.trim();
+        if (!appId) {
+          setStatus('Cast SDK 已載入；請輸入 Receiver App ID 後套用。');
+          return;
+        }
+
+        try {
+          castContext = cast.framework.CastContext.getInstance();
+          castContext.setOptions({
+            receiverApplicationId: appId,
+            autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+          });
+
+          castContext.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, event => {
+            castStateNode.textContent = `Cast state: ${event.castState}`;
+            requestButton.disabled = event.castState === cast.framework.CastState.NO_DEVICES_AVAILABLE;
+          });
+
+          castContext.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, event => {
+            castStateNode.textContent = `Session state: ${event.sessionState}`;
+            if (event.sessionState === cast.framework.SessionState.SESSION_STARTED ||
+                event.sessionState === cast.framework.SessionState.SESSION_RESUMED) {
+              attachToCurrentSession();
+            }
+            if (event.sessionState === cast.framework.SessionState.SESSION_ENDED) {
+              attachedSession = null;
+              endButton.disabled = true;
+              setStatus('Cast session 已結束。');
+            }
+          });
+
+          requestButton.disabled = false;
+          setStatus(`Cast SDK 已初始化，Receiver App ID：${appId}`);
+          attachToCurrentSession();
+        } catch (error) {
+          setStatus(`Cast 初始化失敗：${formatError(error)}`, true);
+          console.error(error);
+        }
+      };
+    })();
+  </script>
+  <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+</body>
+</html>
