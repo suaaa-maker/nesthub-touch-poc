@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>Hub Clock</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      background: #000;
+      color: #f7f8fa;
+      --muted: #a6a8ae;
+      --line: rgba(255, 255, 255, .16);
+      --weather: #dff2ff;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    touch-controls { pointer-events: none !important; }
+
+    body {
+      margin: 0;
+      min-width: 640px;
+      min-height: 360px;
+      overflow: hidden;
+      background: #000;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .screen {
+      width: 100%;
+      height: 100%;
+      padding: max(30px, env(safe-area-inset-top)) max(36px, env(safe-area-inset-right))
+        max(28px, env(safe-area-inset-bottom)) max(40px, env(safe-area-inset-left));
+      display: grid;
+      grid-template-columns: minmax(0, 1.18fr) minmax(360px, .82fr);
+      background: #000;
+    }
+
+    .clock-panel, .weather-panel {
+      min-width: 0;
+      min-height: 0;
+      touch-action: manipulation;
+      cursor: default;
+    }
+
+    .clock-panel {
+      padding: 4px 38px 4px 5px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border-right: 1px solid var(--line);
+    }
+
+    .weather-panel {
+      padding: 4px 0 2px 36px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .day, .city {
+      color: #d8d9dd;
+      font-size: 26px;
+      font-weight: 720;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time-wrap { display: flex; align-items: center; min-width: 0; }
+
+    #clock {
+      font: 760 clamp(118px, 17.5vw, 176px)/.9 Arial, sans-serif;
+      letter-spacing: -.075em;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    #seconds {
+      align-self: flex-end;
+      margin: 0 0 42px 13px;
+      color: var(--muted);
+      font: 620 31px/1 Arial, sans-serif;
+      font-variant-numeric: tabular-nums;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    body.show-seconds #seconds { opacity: 1; transform: translateY(0); }
+
+    .date-row {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    #date {
+      color: #c9cbd0;
+      font-size: 27px;
+      font-weight: 560;
+      white-space: nowrap;
+    }
+
+    .hint { color: #4d5056; font-size: 11px; letter-spacing: .04em; white-space: nowrap; }
+
+    .current-weather {
+      min-height: 0;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+    }
+
+    .temperature-row {
+      display: grid;
+      grid-template-columns: 1fr 132px;
+      align-items: center;
+      gap: 7px;
+    }
+
+    #temperature {
+      color: var(--weather);
+      font: 760 clamp(78px, 10.8vw, 110px)/.88 Arial, sans-serif;
+      letter-spacing: -.06em;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    #temperature sup {
+      position: relative;
+      top: -.08em;
+      font-size: .46em;
+      letter-spacing: 0;
+      vertical-align: top;
+    }
+
+    .weather-icon { width: 126px; height: 108px; overflow: visible; color: var(--weather); }
+    .weather-icon g { display: none; }
+    .weather-icon[data-kind="clear"] .sun,
+    .weather-icon[data-kind="partly"] .sun,
+    .weather-icon[data-kind="partly"] .cloud,
+    .weather-icon[data-kind="cloud"] .cloud,
+    .weather-icon[data-kind="fog"] .cloud,
+    .weather-icon[data-kind="fog"] .fog,
+    .weather-icon[data-kind="rain"] .cloud,
+    .weather-icon[data-kind="rain"] .rain,
+    .weather-icon[data-kind="snow"] .cloud,
+    .weather-icon[data-kind="snow"] .snow,
+    .weather-icon[data-kind="storm"] .cloud,
+    .weather-icon[data-kind="storm"] .storm { display: block; }
+    .weather-icon[data-kind="partly"] .sun { transform: translate(-17px, -16px) scale(.75); transform-origin: center; }
+
+    #condition { color: #eff1f4; font-size: 27px; font-weight: 630; line-height: 1.15; }
+    #high-low { margin-top: 3px; color: var(--muted); font-size: 19px; font-weight: 520; }
+
+    .forecast {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    .forecast-item { min-width: 0; text-align: center; }
+    .forecast-time { color: var(--muted); font-size: 16px; font-variant-numeric: tabular-nums; }
+    .forecast-value {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      color: #e8eaee;
+      font-size: 23px;
+      font-weight: 680;
+      font-variant-numeric: tabular-nums;
+    }
+    .forecast-symbol { width: 27px; color: var(--weather); font-size: 24px; line-height: 1; }
+
+    .source-row {
+      grid-column: 1 / -1;
+      margin-top: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #55585f;
+      font-size: 10px;
+      letter-spacing: .02em;
+    }
+
+    #status[data-state="ready"] { color: #73777f; }
+    #status[data-state="error"] { color: #b77575; }
+    .clock-panel:active, .weather-panel:active { background: rgba(255, 255, 255, .018); }
+
+    @media (max-width: 800px), (max-height: 460px) {
+      .screen { padding: 18px 22px; grid-template-columns: minmax(0, 1.12fr) minmax(285px, .88fr); }
+      .clock-panel { padding-right: 22px; }
+      .weather-panel { padding-left: 22px; }
+      .day, .city { font-size: 19px; }
+      #clock { font-size: clamp(82px, 16vw, 124px); }
+      #date, #condition { font-size: 20px; }
+      .temperature-row { grid-template-columns: 1fr 98px; }
+      .weather-icon { width: 94px; height: 82px; }
+      #temperature { font-size: clamp(62px, 10vw, 88px); }
+      .forecast { padding-top: 11px; }
+      .forecast-time { font-size: 13px; }
+      .forecast-value { margin-top: 4px; font-size: 18px; }
+      .source-row { margin-top: 4px; }
+    }
+  </style>
+  <script>window.receiverSdkLoadFailed = false;</script>
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"
+          onerror="window.receiverSdkLoadFailed = true"></script>
+</head>
+<body>
+  <main class="screen">
+    <section class="clock-panel" id="clock-panel" role="button" tabindex="0" aria-label="時間；輕觸切換秒數">
+      <div class="day" id="day">星期日</div>
+      <div class="time-wrap"><div id="clock">--:--</div><div id="seconds">--</div></div>
+      <div class="date-row"><div id="date">---- 年 -- 月 -- 日</div><div class="hint">輕觸切換秒數</div></div>
+    </section>
+
+    <section class="weather-panel" id="weather-panel" role="button" tabindex="0" aria-label="天氣；輕觸立即更新">
+      <div class="city" id="city">台北</div>
+      <div class="current-weather">
+        <div class="temperature-row">
+          <div id="temperature">--<sup>°</sup></div>
+          <svg class="weather-icon" id="weather-icon" data-kind="partly" viewBox="0 0 140 120" aria-hidden="true">
+            <g class="sun" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round">
+              <circle cx="64" cy="54" r="20"></circle>
+              <path d="M64 18v-9M64 99v-9M28 54h-9M109 54h-9M38 28l-7-7M97 87l-7-7M90 28l7-7M31 87l7-7"></path>
+            </g>
+            <g class="cloud" fill="#000" stroke="currentColor" stroke-width="5" stroke-linejoin="round">
+              <path d="M32 83c-11 0-20-8-20-19s9-19 21-19c5-17 18-27 35-27 22 0 38 17 39 39 12 0 21 9 21 21 0 11-9 20-21 20H33c-12 0-21-6-21-15"></path>
+            </g>
+            <g class="fog" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M30 106h75M43 116h70"></path></g>
+            <g class="rain" fill="none" stroke="#8ed8ff" stroke-width="5" stroke-linecap="round"><path d="M45 103l-5 10M71 103l-5 10M97 103l-5 10"></path></g>
+            <g class="snow" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M47 103v13M40 109h14M84 103v13M77 109h14"></path></g>
+            <g class="storm" fill="#ffd86b" stroke="#ffd86b" stroke-width="2" stroke-linejoin="round"><path d="M70 96l-13 19h12l-5 15 21-25H72z"></path></g>
+          </svg>
+        </div>
+        <div id="condition">正在取得天氣…</div>
+        <div id="high-low">高 --°　低 --°</div>
+      </div>
+      <div class="forecast" id="forecast">
+        <div class="forecast-item"><div class="forecast-time">--:--</div><div class="forecast-value"><span class="forecast-symbol">·</span><span>--°</span></div></div>
+        <div class="forecast-item"><div class="forecast-time">--:--</div><div class="forecast-value"><span class="forecast-symbol">·</span><span>--°</span></div></div>
+        <div class="forecast-item"><div class="forecast-time">--:--</div><div class="forecast-value"><span class="forecast-symbol">·</span><span>--°</span></div></div>
+        <div class="source-row"><span>OPEN-METEO</span><span id="status" data-state="loading">更新中</span></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const CUSTOM_NAMESPACE = 'urn:x-cast:com.example.nesthub.touchpoc';
+      const params = new URLSearchParams(location.search);
+      const config = {
+        city: params.get('city') || '台北',
+        latitude: Number(params.get('lat') || 25.0330),
+        longitude: Number(params.get('lon') || 121.5654),
+        timezone: params.get('tz') || 'Asia/Taipei'
+      };
+      const state = { showSeconds: false, sequence: 0, weatherLoaded: false };
+      let receiverContext = null;
+
+      const dayNode = document.getElementById('day');
+      const clockNode = document.getElementById('clock');
+      const secondsNode = document.getElementById('seconds');
+      const dateNode = document.getElementById('date');
+      const cityNode = document.getElementById('city');
+      const temperatureNode = document.getElementById('temperature');
+      const conditionNode = document.getElementById('condition');
+      const highLowNode = document.getElementById('high-low');
+      const weatherIcon = document.getElementById('weather-icon');
+      const forecastNode = document.getElementById('forecast');
+      const statusNode = document.getElementById('status');
+      cityNode.textContent = config.city;
+
+      function updateClock() {
+        const formatter = new Intl.DateTimeFormat('zh-TW', {
+          timeZone: config.timezone,
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        });
+        const parts = Object.fromEntries(formatter.formatToParts(new Date()).map(part => [part.type, part.value]));
+        dayNode.textContent = parts.weekday;
+        clockNode.textContent = `${parts.hour}:${parts.minute}`;
+        secondsNode.textContent = parts.second;
+        dateNode.textContent = `${parts.year} 年 ${parts.month} ${parts.day} 日`;
+      }
+
+      function weatherDetails(code) {
+        if (code === 0) return { label: '晴朗', kind: 'clear', symbol: '☀' };
+        if ([1, 2].includes(code)) return { label: '晴時多雲', kind: 'partly', symbol: '◒' };
+        if (code === 3) return { label: '多雲', kind: 'cloud', symbol: '☁' };
+        if ([45, 48].includes(code)) return { label: '有霧', kind: 'fog', symbol: '≋' };
+        if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: '有雨', kind: 'rain', symbol: '☂' };
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: '降雪', kind: 'snow', symbol: '✻' };
+        if ([95, 96, 99].includes(code)) return { label: '雷雨', kind: 'storm', symbol: 'ϟ' };
+        return { label: '天氣變化', kind: 'cloud', symbol: '☁' };
+      }
+
+      function roundTemperature(value) { return Number.isFinite(Number(value)) ? Math.round(Number(value)) : '--'; }
+
+      function forecastItems(data) {
+        const times = data.hourly?.time || [];
+        const temperatures = data.hourly?.temperature_2m || [];
+        const codes = data.hourly?.weather_code || [];
+        let start = times.findIndex(time => time > (data.current?.time || ''));
+        if (start < 0) start = 0;
+        return [start, start + 3, start + 6].map(index => ({
+          time: times[index] ? times[index].slice(11, 16) : '--:--',
+          temperature: roundTemperature(temperatures[index]),
+          ...weatherDetails(Number(codes[index]))
+        }));
+      }
+
+      function renderForecast(data) {
+        const details = weatherDetails(Number(data.current?.weather_code));
+        temperatureNode.innerHTML = `${roundTemperature(data.current?.temperature_2m)}<sup>°</sup>`;
+        conditionNode.textContent = details.label;
+        weatherIcon.dataset.kind = details.kind;
+        highLowNode.textContent = `高 ${roundTemperature(data.daily?.temperature_2m_max?.[0])}°　低 ${roundTemperature(data.daily?.temperature_2m_min?.[0])}°`;
+        const items = forecastItems(data);
+        forecastNode.querySelectorAll('.forecast-item').forEach((node, index) => {
+          const item = items[index];
+          node.querySelector('.forecast-time').textContent = item.time;
+          node.querySelector('.forecast-symbol').textContent = item.symbol;
+          node.querySelector('.forecast-value span:last-child').textContent = `${item.temperature}°`;
+        });
+      }
+
+      function broadcast(payload) {
+        if (!receiverContext || !receiverContext.isSystemReady()) return;
+        try { receiverContext.sendCustomMessage(CUSTOM_NAMESPACE, undefined, payload); }
+        catch (error) { console.warn('Widget message could not be sent', error); }
+      }
+
+      function reportAction(widget, action, value, event) {
+        const payload = { kind: 'widget-action', widget, action, value, isTrusted: event ? event.isTrusted : null, timestamp: new Date().toISOString() };
+        broadcast(payload);
+        console.log('[hub-clock]', payload);
+      }
+
+      async function loadWeather(event) {
+        statusNode.dataset.state = 'loading';
+        statusNode.textContent = '更新中';
+        const query = new URLSearchParams({
+          latitude: String(config.latitude), longitude: String(config.longitude),
+          current: 'temperature_2m,weather_code,is_day',
+          hourly: 'temperature_2m,weather_code',
+          daily: 'temperature_2m_max,temperature_2m_min',
+          timezone: config.timezone, forecast_days: '2'
+        });
+        try {
+          const response = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`);
+          if (!response.ok) throw new Error(`Weather HTTP ${response.status}`);
+          renderForecast(await response.json());
+          state.weatherLoaded = true;
+          statusNode.dataset.state = 'ready';
+          statusNode.textContent = `更新 ${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+          reportAction('weather', 'updated', config.city, event || null);
+        } catch (error) {
+          statusNode.dataset.state = 'error';
+          statusNode.textContent = '更新失敗';
+          if (!state.weatherLoaded) conditionNode.textContent = '暫時無法取得天氣';
+          console.error(error);
+          broadcast({ kind: 'weather-error', message: error.message, timestamp: new Date().toISOString() });
+        }
+      }
+
+      function toggleSeconds(event) {
+        state.showSeconds = !state.showSeconds;
+        document.body.classList.toggle('show-seconds', state.showSeconds);
+        reportAction('clock', 'toggle-seconds', state.showSeconds, event);
+      }
+
+      const clockPanel = document.getElementById('clock-panel');
+      const weatherPanel = document.getElementById('weather-panel');
+      clockPanel.addEventListener('click', toggleSeconds);
+      weatherPanel.addEventListener('click', event => loadWeather(event));
+      [clockPanel, weatherPanel].forEach(panel => panel.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        panel.click();
+      }));
+
+      ['pointerdown', 'touchstart', 'click'].forEach(type => document.addEventListener(type, event => {
+        const panel = event.target.closest ? event.target.closest('.clock-panel, .weather-panel') : null;
+        if (!panel) return;
+        const point = event.touches && event.touches[0] ? event.touches[0] : event;
+        broadcast({
+          kind: 'input-event', sequence: ++state.sequence, eventType: type, target: panel.id,
+          pointerType: event.pointerType || null,
+          x: Number.isFinite(point.clientX) ? Math.round(point.clientX) : null,
+          y: Number.isFinite(point.clientY) ? Math.round(point.clientY) : null,
+          isTrusted: event.isTrusted, timestamp: new Date().toISOString()
+        });
+      }, { capture: true, passive: true }));
+
+      function disableCafMediaTouchOverlay() {
+        document.querySelectorAll('touch-controls').forEach(element => {
+          element.style.setProperty('pointer-events', 'none', 'important');
+          element.setAttribute('data-widget-hit-test', 'disabled');
+        });
+      }
+
+      const overlayObserver = new MutationObserver(disableCafMediaTouchOverlay);
+      overlayObserver.observe(document.documentElement, { childList: true, subtree: true });
+      disableCafMediaTouchOverlay();
+      updateClock();
+      setInterval(updateClock, 1000);
+      loadWeather(null);
+      setInterval(() => loadWeather(null), 15 * 60 * 1000);
+
+      try {
+        if (window.receiverSdkLoadFailed || !window.cast || !cast.framework) throw new Error('CAF SDK 未載入；目前為瀏覽器預覽');
+        receiverContext = cast.framework.CastReceiverContext.getInstance();
+        receiverContext.addEventListener(cast.framework.system.EventType.READY, () => {
+          disableCafMediaTouchOverlay();
+          broadcast({
+            kind: 'widget-ready', widget: 'hub-clock-weather',
+            viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+            location: { city: config.city, latitude: config.latitude, longitude: config.longitude, timezone: config.timezone },
+            maxTouchPoints: navigator.maxTouchPoints || 0, timestamp: new Date().toISOString()
+          });
+        });
+        receiverContext.start({
+          disableIdleTimeout: true, skipPlayersLoad: true, statusText: 'Hub Clock ready', versionCode: 2,
+          uiConfig: { touchScreenOptimizedApp: true },
+          customNamespaces: { [CUSTOM_NAMESPACE]: cast.framework.system.MessageType.JSON }
+        });
+      } catch (error) { console.info(error.message); }
+    })();
+  </script>
+</body>
+</html>
