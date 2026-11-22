@@ -15,6 +15,13 @@
 
     * { box-sizing: border-box; }
 
+    /*
+      CAF inserts a full-screen <touch-controls> host on smart displays.
+      This POC is a non-media receiver with its own HTML controls, so the
+      CAF media-control layer must not become the pointer hit target.
+    */
+    touch-controls { pointer-events: none !important; }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -140,6 +147,8 @@
         <span class="counter">pointerdown: <b id="count-pointerdown">0</b></span>
         <span class="counter">touchstart: <b id="count-touchstart">0</b></span>
         <span class="counter">click: <b id="count-click">0</b></span>
+        <span class="counter">A handler: <b id="count-button-a">0</b></span>
+        <span class="counter">B handler: <b id="count-button-b">0</b></span>
       </div>
     </div>
     <div class="card">
@@ -160,6 +169,7 @@
       const CUSTOM_NAMESPACE = 'urn:x-cast:com.example.nesthub.touchpoc';
       const eventTypes = ['pointerdown', 'touchstart', 'click'];
       const counts = Object.fromEntries(eventTypes.map(type => [type, 0]));
+      const buttonCounts = { 'button-a': 0, 'button-b': 0 };
       const history = [];
       const sdkState = document.getElementById('sdk-state');
       const capabilitiesNode = document.getElementById('capabilities');
@@ -231,6 +241,32 @@
         document.addEventListener(type, recordEvent, { capture: true, passive: true });
       });
 
+      document.querySelectorAll('.test-button').forEach(button => {
+        button.addEventListener('click', event => {
+          buttonCounts[button.id] += 1;
+          document.getElementById(`count-${button.id}`).textContent = buttonCounts[button.id];
+          lastAction.textContent = `${button.textContent} handler executed #${buttonCounts[button.id]} · trusted=${event.isTrusted}`;
+          broadcast({
+            kind: 'button-action',
+            target: button.id,
+            count: buttonCounts[button.id],
+            isTrusted: event.isTrusted,
+            timestamp: new Date().toISOString()
+          });
+        });
+      });
+
+      function disableCafMediaTouchOverlay() {
+        document.querySelectorAll('touch-controls').forEach(element => {
+          element.style.setProperty('pointer-events', 'none', 'important');
+          element.setAttribute('data-poc-hit-test', 'disabled');
+        });
+      }
+
+      const overlayObserver = new MutationObserver(disableCafMediaTouchOverlay);
+      overlayObserver.observe(document.documentElement, { childList: true, subtree: true });
+      disableCafMediaTouchOverlay();
+
       function showDeviceCapabilities() {
         const capabilities = receiverContext.getDeviceCapabilities() || {};
         const information = receiverContext.getDeviceInformation() || {};
@@ -266,6 +302,7 @@
         receiverContext = cast.framework.CastReceiverContext.getInstance();
         receiverContext.addEventListener(cast.framework.system.EventType.READY, () => {
           sdkState.textContent = `CAF ${cast.framework.VERSION || ''}：READY`;
+          disableCafMediaTouchOverlay();
           showDeviceCapabilities();
         });
         receiverContext.addEventListener(cast.framework.system.EventType.ERROR, event => {
